@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini framework web en Java</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+    <img src="/images/logoU.png" alt="Logo de la Escuela Colombiana de Ingeniería"
+         width="72" height="72">
+    <h1>Mini framework web en Java</h1>
+    <p>Un servidor secuencial donde cada servicio es una lambda registrada con get().</p>
+</header>
+
+<main>
+    <section>
+        <h2>Saludo</h2>
+        <p>Llama a <code>/hello?name=...</code></p>
+        <label for="nombre">Nombre</label>
+        <input type="text" id="nombre" value="Mariana" autocomplete="off">
+        <button id="btn-saludo">Pedir saludo</button>
+    </section>
+
+    <section>
+        <h2>Número pi</h2>
+        <p>Llama a <code>/pi</code></p>
+        <button id="btn-pi">Pedir pi</button>
+    </section>
+
+    <section>
+        <h2>Configuración del servidor</h2>
+        <p>Llama a <code>/config</code> y muestra las variables de entorno que leyó el servidor.</p>
+        <button id="btn-config">Ver configuración</button>
+    </section>
+</main>
+
+<section id="resultado" aria-live="polite">
+    <h2>Resultado</h2>
+    <p id="resultado-texto">Todavía no has pedido nada.</p>
+</section>
+
+<section id="error" role="alert" hidden>
+    <h2>Error</h2>
+    <p id="error-texto"></p>
+</section>
+
+<figure>
+    <img src="/images/fotoU.jpeg" alt="Escuela Colombiana de Ingeniería" width="640">
+    <figcaption>Cada recurso de esta página llegó en una petición HTTP distinta.</figcaption>
+</figure>
+
+<script src="/app.js"></script>
+
+</body>
+</html>
