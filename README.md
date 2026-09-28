@@ -1,4 +1,5 @@
 # TDSE Framework Extension: concurrencia, apagado gradual y despliegue
+## Mariana Malagón 
 
 Extensión de mi propio framework web en Java (sin Spring), tomado del repositorio [TDSE_JavaFramework](https://github.com/marianamalagon11/TDSE_JavaFramework). El objetivo de este repositorio es que el framework soporte manejo concurrente de peticiones, apagado gradual, puerto configurable por variable de entorno, ejecución en Docker y despliegue en EC2.
 
@@ -140,7 +141,7 @@ El primer `8080` de `-p` es el puerto de la máquina y el segundo el del contene
 ## Despliegue en AWS EC2
 
 - **Servicio:** EC2, región `us-east-1`, instancia `virtualization-lab-ec2` (`t3.micro`, Amazon Linux). Es la misma instancia del repositorio 1, que ya tiene Docker instalado y otro contenedor en el puerto 8080.
-- **Imagen:** [`marianamalagon11/webframework-ext:1.0`](https://hub.docker.com/r/marianamalagon11/webframework-ext) en Docker Hub.
+- **Imagen:** [`marianamalagon11/webframework-ext:1.1`](https://hub.docker.com/r/marianamalagon11/webframework-ext) en Docker Hub.
 - **URL pública:** http://35.175.173.153:8081
 
 La IP pública la asigna AWS automáticamente. Si la instancia se detiene y se vuelve a iniciar, cambia.
@@ -157,8 +158,8 @@ Decisiones:
 
    ```bash
    docker login
-   docker tag webframework-ext marianamalagon11/webframework-ext:1.0
-   docker push marianamalagon11/webframework-ext:1.0
+   docker tag webframework-ext marianamalagon11/webframework-ext:1.1
+   docker push marianamalagon11/webframework-ext:1.1
    ```
 
 2. **Abrir el puerto 8081** en el security group de la instancia: regla de entrada TCP personalizado, puerto 8081, origen `0.0.0.0/0`.
@@ -172,12 +173,12 @@ Decisiones:
 4. **Descargar y ejecutar la imagen** en la instancia:
 
    ```bash
-   docker pull marianamalagon11/webframework-ext:1.0
+   docker pull marianamalagon11/webframework-ext:1.1
 
    docker run -d --name webframework --restart unless-stopped \
      -p 8081:8080 \
      -e PORT=8080 -e APP_ENV=production -e GREETING_PREFIX=Hola \
-     marianamalagon11/webframework-ext:1.0
+     marianamalagon11/webframework-ext:1.1
    ```
 
 5. **Verificar** con `docker ps`, `docker logs webframework` y `curl localhost:8081/pi`, y luego desde el navegador con `http://<IP_PUBLICA>:8081`.
@@ -309,7 +310,7 @@ El repositorio público `marianamalagon11/webframework-ext` en Docker Hub con la
 
 ![Repositorio en Docker Hub](images/04-dockerhub-repo.png)
 
-**Imagen descargada en la instancia** con `docker pull`. El digest `sha256:4462920b...` es el mismo que se subió desde la máquina local:
+**Imagen descargada en la instancia** con `docker pull` (primer despliegue, versión `1.0`). El digest `sha256:4462920b...` es el mismo que se subió desde la máquina local:
 
 ![docker pull en EC2](images/04-docker-pull-ec2.png)
 
@@ -321,7 +322,11 @@ El repositorio público `marianamalagon11/webframework-ext` en Docker Hub con la
 
 ![docker ps, logs y curl en EC2](images/04-docker-ps-logs-ec2.png)
 
-**Aplicación en el navegador** desde `http://35.175.173.153:8081`. El botón Pedir saludo llama a `/hello` con `GREETING_PREFIX=Hola`:
+**Actualización a la versión `1.1`.** Después del primer despliegue se corrigió el texto de la página de ejemplo, que todavía decía "servidor secuencial". Se reconstruyó la imagen, se subió como `1.1` y en la instancia se descargó, se borró solo el contenedor `webframework` (el del repositorio 1 no se tocó) y se creó de nuevo con la misma configuración. `docker ps` muestra ambos contenedores corriendo:
+
+![Actualización a 1.1 en EC2](images/04-ec2-actualizacion-1-1.png)
+
+**Aplicación en el navegador** desde `http://35.175.173.153:8081`, ya con la versión `1.1`. El botón Pedir saludo llama a `/hello` con `GREETING_PREFIX=Hola`:
 
 ![Saludo en la nube](images/04-browser-hello.png)
 
