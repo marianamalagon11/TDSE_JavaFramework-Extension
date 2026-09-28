@@ -116,13 +116,9 @@ Luego abrir `http://localhost:8085`.
 
 ## Evidencia de progreso
 
-### Commits
+### Commit de la extensión
 
-| Commit | Descripción |
-|---|---|
-| [`105d2de`](https://github.com/marianamalagon11/TDSE_JavaFramework-Extension/commit/105d2de) | Import base framework from TDSE_JavaFramework |
-
-Los commits de la extensión se agregan aquí a medida que se hacen.
+La concurrencia y el apagado gradual se implementaron en el commit [`e2a9ac7`](https://github.com/marianamalagon11/TDSE_JavaFramework-Extension/commit/e2a9ac7), "Implement concurrent request handling and graceful shutdown".
 
 ### Pruebas automatizadas
 
@@ -133,3 +129,41 @@ Las 23 pruebas JUnit del framework pasan con el servidor concurrente (0 fallos).
 `mvn clean package` termina con `BUILD SUCCESS` y genera el JAR ejecutable con la extensión aplicada:
 
 ![Build exitoso](images/02-mvn-package.png)
+
+### Verificación local de la concurrencia
+
+Con el servidor corriendo con `java -jar` en el puerto 8085.
+
+**Prueba A: una conexión lenta no bloquea a las demás.** Se abre una conexión TCP que no envía nada (el servidor la mantiene hasta el timeout de 5 segundos) y se mide cuánto tarda `/pi`. Con el servidor secuencial tenía que esperar ese timeout. Ahora responde en 97 ms:
+
+```powershell
+$c = New-Object System.Net.Sockets.TcpClient("localhost", 8085)
+Measure-Command { curl.exe -s http://localhost:8085/pi }
+```
+
+![Tiempo de /pi con una conexión callada abierta](images/02-curl-concurrente.png)
+
+**Prueba B: 50 peticiones simultáneas.** curl genera 50 URLs con `[1-50]` y las envía en paralelo, hasta 20 a la vez:
+
+```powershell
+curl.exe -s --parallel --parallel-max 20 "http://localhost:8085/pi?n=[1-50]" -o NUL
+```
+
+![curl enviando 50 peticiones en paralelo](images/02-curl-paralelo.png)
+
+En el registro del servidor las peticiones no aparecen en orden (por ejemplo `n=3` y `n=4` después de `n=21`, o `n=46` antes de `n=45`), porque cada una se atiende en su propio thread virtual y termina cuando le toca:
+
+![Registro del servidor con peticiones fuera de orden](images/02-servidor-log-paralelo.png)
+
+**Prueba C: apagado gradual.** Se abre otra conexión callada y luego se pide `/shutdown`. La respuesta llega completa, pero el servidor no sale de inmediato:
+
+```powershell
+$c = New-Object System.Net.Sockets.TcpClient("localhost", 8085)
+curl.exe -s http://localhost:8085/shutdown
+```
+
+![Respuesta de /shutdown](images/02-shutdown-local.png)
+
+En el registro se ve que primero termina la conexión callada (`Read timed out`, al cumplirse su timeout de 5 segundos) y solo después aparece `Servidor detenido.`. Es decir, el servidor esperó a la petición en curso antes de salir:
+
+![Registro del servidor al apagarse](images/02-shutdown-detenido.png)
