@@ -2,7 +2,6 @@
 
 Extensión de mi propio framework web en Java (sin Spring), tomado del repositorio [TDSE_JavaFramework](https://github.com/marianamalagon11/TDSE_JavaFramework). El objetivo de este repositorio es que el framework soporte manejo concurrente de peticiones, apagado gradual, puerto configurable por variable de entorno, ejecución en Docker y despliegue en EC2.
 
-> Este README se va completando a medida que avanza el trabajo. Las secciones de Docker y de la nube se agregan cuando esos pasos estén verificados.
 
 ## Estado del avance
 
@@ -13,7 +12,7 @@ Extensión de mi propio framework web en Java (sin Spring), tomado del repositor
 | Apagado gradual | Hecho (cierra el socket de inmediato y espera las peticiones en curso) |
 | Puerto por variable de entorno | Ya existía en el framework base (`PORT`) |
 | Ejecución en Docker | Hecho: imagen construida, concurrencia y apagado gradual verificados en el contenedor |
-| Despliegue en EC2 | Pendiente |
+| Despliegue en EC2 | Hecho: contenedor corriendo en una instancia EC2, accesible en `http://35.175.173.153:8081` |
 
 ## Estado actual del framework
 
@@ -138,6 +137,53 @@ docker run -d --name webframework -p 8080:8080 -e PORT=8080 -e APP_ENV=developme
 
 El primer `8080` de `-p` es el puerto de la máquina y el segundo el del contenedor, que debe coincidir con `PORT`. Para detener y borrar el contenedor: `docker rm -f webframework`.
 
+## Despliegue en AWS EC2
+
+- **Servicio:** EC2, región `us-east-1`, instancia `virtualization-lab-ec2` (`t3.micro`, Amazon Linux). Es la misma instancia del repositorio 1, que ya tiene Docker instalado y otro contenedor en el puerto 8080.
+- **Imagen:** [`marianamalagon11/webframework-ext:1.0`](https://hub.docker.com/r/marianamalagon11/webframework-ext) en Docker Hub.
+- **URL pública:** http://35.175.173.153:8081
+
+La IP pública la asigna AWS automáticamente. Si la instancia se detiene y se vuelve a iniciar, cambia.
+
+Decisiones:
+
+- **Puerto 8081 en la instancia**, mapeado al 8080 del contenedor, para no chocar con la aplicación del repositorio 1, que usa el 8080. Cada aplicación corre en su propio contenedor.
+- **Imagen desde Docker Hub** en lugar de compilar en la instancia. Un `t3.micro` tiene solo 913 MiB de memoria y sin swap, y compilar con Maven ahí podía dejarla sin memoria y afectar al contenedor del repositorio 1.
+- **`APP_ENV=production`**, así que la ruta `/shutdown` no se registra y nadie puede apagar el servidor desde internet.
+
+### Cómo reproducir el despliegue
+
+1. **Publicar la imagen** desde la máquina de desarrollo:
+
+   ```bash
+   docker login
+   docker tag webframework-ext marianamalagon11/webframework-ext:1.0
+   docker push marianamalagon11/webframework-ext:1.0
+   ```
+
+2. **Abrir el puerto 8081** en el security group de la instancia: regla de entrada TCP personalizado, puerto 8081, origen `0.0.0.0/0`.
+
+3. **Conectarse por SSH** a la instancia:
+
+   ```bash
+   ssh -i firstKey.pem ec2-user@<IP_PUBLICA>
+   ```
+
+4. **Descargar y ejecutar la imagen** en la instancia:
+
+   ```bash
+   docker pull marianamalagon11/webframework-ext:1.0
+
+   docker run -d --name webframework --restart unless-stopped \
+     -p 8081:8080 \
+     -e PORT=8080 -e APP_ENV=production -e GREETING_PREFIX=Hola \
+     marianamalagon11/webframework-ext:1.0
+   ```
+
+5. **Verificar** con `docker ps`, `docker logs webframework` y `curl localhost:8081/pi`, y luego desde el navegador con `http://<IP_PUBLICA>:8081`.
+
+Para actualizar tras un cambio: reconstruir, volver a hacer `docker push`, y en la instancia `docker pull`, `docker rm -f webframework` y repetir el `docker run`.
+
 ## Evidencia de progreso
 
 ### Commit de la extensión
@@ -240,3 +286,55 @@ curl.exe -s http://localhost:8080/shutdown
 Pasados unos segundos, el registro muestra `GET /shutdown`, `Servidor detenido.` y `Read timed out`, y `docker ps -a` muestra el contenedor como `Exited (0)`, es decir, terminó sin error. Que aparezca `Read timed out` prueba que el proceso esperó a la conexión en curso: si hubiera salido de inmediato, la JVM habría terminado antes de que esa conexión cumpliera su timeout de 5 segundos y ese mensaje nunca se habría escrito. (`docker logs` junta la salida normal y la de errores, y no garantiza el orden entre ambas.)
 
 ![docker logs y docker ps -a después del apagado](images/03-docker-shutdown-logs.png)
+
+### Verificación en AWS EC2
+
+**Instancia en ejecución** en la consola de AWS, con su IP pública:
+
+![Instancia EC2](images/04-ec2-instancia.png)
+
+**Conexión por SSH.** Antes de desplegar se revisó lo que ya había: Docker instalado, el contenedor del repositorio 1 en el puerto 8080 y unos 459 MiB de memoria disponible:
+
+![Conexión SSH y revisión de la instancia](images/04-ssh-connect.png)
+
+**Regla de entrada** del security group para el puerto 8081:
+
+![Regla del security group](images/04-security-group.png)
+
+**Imagen publicada en Docker Hub** con `docker push`:
+
+![docker push](images/04-dockerhub-push.png)
+
+El repositorio público `marianamalagon11/webframework-ext` en Docker Hub con la etiqueta `1.0`:
+
+![Repositorio en Docker Hub](images/04-dockerhub-repo.png)
+
+**Imagen descargada en la instancia** con `docker pull`. El digest `sha256:4462920b...` es el mismo que se subió desde la máquina local:
+
+![docker pull en EC2](images/04-docker-pull-ec2.png)
+
+**Contenedor iniciado** con las variables de entorno:
+
+![docker run en EC2](images/04-docker-run-ec2.png)
+
+`docker ps` muestra los dos contenedores de la instancia, el del repositorio 1 en el 8080 y este framework en el 8081. El registro confirma `APP_ENV=production` y que el servidor escucha en el 8080 del contenedor:
+
+![docker ps, logs y curl en EC2](images/04-docker-ps-logs-ec2.png)
+
+**Aplicación en el navegador** desde `http://35.175.173.153:8081`. El botón Pedir saludo llama a `/hello` con `GREETING_PREFIX=Hola`:
+
+![Saludo en la nube](images/04-browser-hello.png)
+
+El botón Pedir pi llama a `/pi`:
+
+![Pi en la nube](images/04-browser-pi.png)
+
+El botón Ver configuración llama a `/config` y muestra las variables con las que se ejecutó el contenedor:
+
+![Configuración en la nube](images/04-browser-config.png)
+
+Los mismos servicios abiertos directamente por URL en la instancia:
+
+![/hello en la nube](images/04-url-hello.png)
+
+![/config en la nube](images/04-url-config.png)
