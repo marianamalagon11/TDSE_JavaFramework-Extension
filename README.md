@@ -4,6 +4,10 @@
 Extensión de mi propio framework web en Java (sin Spring), tomado del repositorio [TDSE_JavaFramework](https://github.com/marianamalagon11/TDSE_JavaFramework). El objetivo de este repositorio es que el framework soporte manejo concurrente de peticiones, apagado gradual, puerto configurable por variable de entorno, ejecución en Docker y despliegue en EC2.
 
 
+## Video de demostración
+
+Despliegue local en Docker y despliegue en EC2 funcionando: https://youtu.be/9qe3z43o6Ls
+
 ## Estado del avance
 
 | Requisito | Estado |
