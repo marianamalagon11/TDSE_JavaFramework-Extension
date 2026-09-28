@@ -12,7 +12,7 @@ Extensión de mi propio framework web en Java (sin Spring), tomado del repositor
 | Manejo concurrente de peticiones | Hecho (threads virtuales de Java 21) |
 | Apagado gradual | Hecho (cierra el socket de inmediato y espera las peticiones en curso) |
 | Puerto por variable de entorno | Ya existía en el framework base (`PORT`) |
-| Ejecución en Docker | Dockerfile heredado, pendiente de verificar con la extensión |
+| Ejecución en Docker | Hecho: imagen construida, concurrencia y apagado gradual verificados en el contenedor |
 | Despliegue en EC2 | Pendiente |
 
 ## Estado actual del framework
@@ -114,6 +114,30 @@ $env:PORT="8085"; java -jar target/httpServer2-1.0-SNAPSHOT.jar
 
 Luego abrir `http://localhost:8085`.
 
+## Cómo ejecutar en Docker
+
+El [Dockerfile](Dockerfile) tiene dos etapas. La primera usa `maven:3.9-eclipse-temurin-21` para compilar y generar el jar. La segunda usa `eclipse-temurin:21-jre` y copia solo ese jar, así la imagen final queda liviana. Por defecto la imagen trae `APP_ENV=production`, así que `/shutdown` no existe.
+
+Construir la imagen:
+
+```bash
+docker build -t webframework-ext .
+```
+
+Ejecutar en modo producción (sin `/shutdown`):
+
+```bash
+docker run -d --name webframework -p 8080:8080 -e PORT=8080 webframework-ext
+```
+
+Ejecutar en modo desarrollo, para poder probar el apagado por HTTP:
+
+```bash
+docker run -d --name webframework -p 8080:8080 -e PORT=8080 -e APP_ENV=development webframework-ext
+```
+
+El primer `8080` de `-p` es el puerto de la máquina y el segundo el del contenedor, que debe coincidir con `PORT`. Para detener y borrar el contenedor: `docker rm -f webframework`.
+
 ## Evidencia de progreso
 
 ### Commit de la extensión
@@ -167,3 +191,52 @@ curl.exe -s http://localhost:8085/shutdown
 En el registro se ve que primero termina la conexión callada (`Read timed out`, al cumplirse su timeout de 5 segundos) y solo después aparece `Servidor detenido.`. Es decir, el servidor esperó a la petición en curso antes de salir:
 
 ![Registro del servidor al apagarse](images/02-shutdown-detenido.png)
+
+### Verificación en Docker
+
+**Imagen construida.** El `docker build` compila el proyecto con Maven dentro de la imagen (60 s la primera vez) y copia el jar a la imagen final:
+
+![docker build](images/03-docker-build.png)
+
+**Contenedor en ejecución.** Se levanta con `PORT=8080` y `APP_ENV=development`:
+
+![docker run](images/03-docker-run.png)
+
+`docker ps` muestra el contenedor `webframework` con el puerto 8080 publicado, y `docker logs` confirma que el servidor lee `APP_ENV` y escucha en el puerto 8080. La lista incluye además contenedores del repositorio 1 que estaban corriendo en la misma máquina:
+
+![docker ps y docker logs](images/03-docker-ps-logs.png)
+
+El mismo contenedor visto en Docker Desktop:
+
+![Docker Desktop](images/03-docker-desktop.png)
+
+**Prueba A en el contenedor.** Con una conexión callada abierta, `/pi` responde en 107 ms:
+
+```powershell
+$c = New-Object System.Net.Sockets.TcpClient("localhost", 8080)
+Measure-Command { curl.exe -s http://localhost:8080/pi }
+```
+
+![Tiempo de /pi en Docker con una conexión callada](images/03-docker-concurrente.png)
+
+**Prueba B en el contenedor.** 50 peticiones simultáneas contra el puerto 8080. En el registro del contenedor vuelven a aparecer fuera de orden (por ejemplo `n=3` y `n=4` después de `n=21`), señal de que se atienden en paralelo:
+
+```powershell
+curl.exe -s --parallel --parallel-max 20 "http://localhost:8080/pi?n=[1-50]" -o NUL
+docker logs webframework
+```
+
+![50 peticiones en paralelo contra el contenedor](images/03-docker-paralelo.png)
+
+**Prueba C en el contenedor: apagado gradual.** Con otra conexión callada abierta, se pide `/shutdown`. La respuesta llega completa:
+
+```powershell
+$c = New-Object System.Net.Sockets.TcpClient("localhost", 8080)
+curl.exe -s http://localhost:8080/shutdown
+```
+
+![Respuesta de /shutdown en Docker](images/03-docker-shutdown.png)
+
+Pasados unos segundos, el registro muestra `GET /shutdown`, `Servidor detenido.` y `Read timed out`, y `docker ps -a` muestra el contenedor como `Exited (0)`, es decir, terminó sin error. Que aparezca `Read timed out` prueba que el proceso esperó a la conexión en curso: si hubiera salido de inmediato, la JVM habría terminado antes de que esa conexión cumpliera su timeout de 5 segundos y ese mensaje nunca se habría escrito. (`docker logs` junta la salida normal y la de errores, y no garantiza el orden entre ambas.)
+
+![docker logs y docker ps -a después del apagado](images/03-docker-shutdown-logs.png)
