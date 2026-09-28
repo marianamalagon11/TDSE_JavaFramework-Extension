@@ -52,7 +52,7 @@ HttpServer2                      acepta conexiones, interpreta la petición, env
 
 ## Cambios de esta extensión
 
-El único archivo de código modificado es [HttpServer2.java](src/main/java/co/edu/escuelaing/httpserver/httpserver2/HttpServer2.java).
+El único archivo de código modificado es [HttpServer2.java](src/main/java/co/edu/escuelaing/httpserver/httpserver2/HttpServer2.java). Además se corrigió el texto de la página de ejemplo ([index.html](src/main/resources/webroot/index.html)), que seguía diciendo que el servidor era secuencial.
 
 ### Antes: servidor secuencial
 
