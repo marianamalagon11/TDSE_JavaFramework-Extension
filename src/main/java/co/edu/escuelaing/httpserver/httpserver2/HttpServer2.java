@@ -10,37 +10,71 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class HttpServer2 {
 
     private static final String TEXT = "text/plain; charset=utf-8";
 
-    // stop() lo pone en false y el while termina despues de la peticion actual
-    private static boolean running = false;
+    // stop() cierra el ServerSocket para sacar al accept() del bloqueo
+    private static volatile boolean running = false;
+    private static ServerSocket serverSocket;
+    private static ExecutorService requestExecutor;
 
     public static void start(int port) throws IOException {
         running = true;
+        // un thread virtual por peticion, asi cada conexion se atiende en paralelo
+        requestExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
+        try (ServerSocket socket = new ServerSocket(port)) {
+            serverSocket = socket;
             System.out.println("Servidor escuchando en el puerto " + port);
 
             while (running) {
-                try (Socket clientSocket = serverSocket.accept()) {
-                    // si el cliente se queda callado no me quedo esperando para siempre
-                    clientSocket.setSoTimeout(5000);
-                    handleRequest(clientSocket);
-                } catch (Exception e) {
-                    // cualquier error de una peticion no debe tumbar el servidor
-                    System.err.println("Error atendiendo una conexion: " + e.getMessage());
+                try {
+                    Socket clientSocket = socket.accept();
+                    requestExecutor.execute(() -> attendConnection(clientSocket));
+                } catch (IOException e) {
+                    // el stop() cierra el socket a proposito, eso no es un error real
+                    if (running) {
+                        System.err.println("Error aceptando una conexion: " + e.getMessage());
+                    }
                 }
             }
+        }
+
+        // deja de aceptar peticiones nuevas y espera a que terminen las que ya estaban en curso
+        requestExecutor.shutdown();
+        try {
+            requestExecutor.awaitTermination(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
 
         System.out.println("Servidor detenido.");
     }
 
+    private static void attendConnection(Socket clientSocket) {
+        try (clientSocket) {
+            // si el cliente se queda callado no me quedo esperando para siempre
+            clientSocket.setSoTimeout(5000);
+            handleRequest(clientSocket);
+        } catch (Exception e) {
+            // cualquier error de una peticion no debe tumbar el servidor
+            System.err.println("Error atendiendo una conexion: " + e.getMessage());
+        }
+    }
+
     public static void stop() {
         running = false;
+        try {
+            // cierra el ServerSocket de inmediato para que accept() deje de bloquear
+            serverSocket.close();
+        } catch (IOException e) {
+            System.err.println("Error cerrando el servidor: " + e.getMessage());
+        }
     }
 
     private static void handleRequest(Socket clientSocket) throws IOException {
